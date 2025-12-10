@@ -1,0 +1,111 @@
+Sistema avanzado de análisis de logs de seguridad que detecta patrones sospechosos, ataques de fuerza bruta, intentos de inyección SQL, escaneos de puertos y otras amenazas comunes.
+Mostrar imagen
+Mostrar imagen
+Mostrar imagen
+🎯 Características
+
+✅ Detección automática de múltiples tipos de amenazas
+✅ Análisis de intentos de fuerza bruta
+✅ Identificación de ataques SQL injection y XSS
+✅ Detección de path traversal y escalación de privilegios
+✅ Análisis de IPs ofensoras y generación de rankings
+✅ Reportes detallados en texto o JSON
+✅ Sistema de puntuación de severidad
+
+📦 Instalación
+bash# Clonar el repositorio
+git clone https://github.com/tuusuario/security-log-analyzer.git
+cd security-log-analyzer
+
+# Instalar dependencias (si las hay)
+pip install -r requirements.txt
+🚀 Uso
+Análisis Básico
+bashpython log_analyzer.py /var/log/auth.log
+Especificar archivo de salida
+bashpython log_analyzer.py /var/log/apache2/access.log -o security_report.txt
+Exportar en formato JSON
+bashpython log_analyzer.py /var/log/syslog -o report.json -f json
+📊 Ejemplo de Salida
+================================================================================
+SECURITY LOG ANALYSIS REPORT
+================================================================================
+
+Generated: 2025-01-15 14:30:45
+Total lines analyzed: 15,234
+Total threats detected: 127
+
+================================================================================
+THREAT SUMMARY
+================================================================================
+  BRUTE_FORCE................................  45 (Severity: 8/10)
+  SQL_INJECTION..............................  23 (Severity: 9/10)
+  PORT_SCAN..................................  18 (Severity: 6/10)
+  UNAUTHORIZED_ACCESS........................  41 (Severity: 5/10)
+
+================================================================================
+BRUTE FORCE ATTACK ANALYSIS
+================================================================================
+
+  IP: 192.168.1.100
+  Failed Attempts: 67
+  Total Requests: 72
+  Severity: CRITICAL
+🔧 Tipos de Amenazas Detectadas
+TipoSeveridadDescripciónSQL Injection9/10Intentos de inyección SQLPrivilege Escalation9/10Intentos de escalación de privilegiosBrute Force8/10Ataques de fuerza brutaPath Traversal8/10Intentos de path traversalXSS Attempt7/10Intentos de Cross-Site ScriptingPort Scan6/10Escaneos de puertosUnauthorized Access5/10Accesos no autorizados
+📁 Estructura del Proyecto
+security-log-analyzer/
+├── log_analyzer.py          # Script principal
+├── README.md                # Este archivo
+├── requirements.txt         # Dependencias (si las hay)
+├── examples/               
+│   ├── sample_logs/        # Logs de ejemplo
+│   └── sample_reports/     # Reportes de ejemplo
+└── tests/                  # Tests unitarios
+🎓 Casos de Uso
+1. Monitoreo de Servidores Web
+Analiza logs de Apache/Nginx para detectar intentos de explotación de vulnerabilidades web.
+2. Análisis de Logs SSH
+Identifica intentos de acceso no autorizado y ataques de fuerza bruta contra servicios SSH.
+3. Investigación Forense
+Revisa logs históricos después de un incidente de seguridad.
+4. Compliance y Auditoría
+Genera reportes de seguridad para auditorías y cumplimiento normativo.
+🔐 Metodologías de Seguridad
+Este proyecto implementa conceptos de:
+
+OWASP Top 10: Detección de vulnerabilidades web comunes
+MITRE ATT&CK: Mapeo de tácticas y técnicas de ataque
+NIST Cybersecurity Framework: Identificación y respuesta a amenazas
+
+🚧 Mejoras Futuras
+
+ Machine Learning para detección de anomalías
+ Integración con SIEM
+ API REST para análisis en tiempo real
+ Dashboard web interactivo
+ Alertas por email/Slack/Discord
+ Soporte para más formatos de logs
+
+🤝 Contribuciones
+Las contribuciones son bienvenidas. Por favor:
+
+Fork el proyecto
+Crea tu Feature Branch (git checkout -b feature/AmazingFeature)
+Commit tus cambios (git commit -m 'Add some AmazingFeature')
+Push al Branch (git push origin feature/AmazingFeature)
+Abre un Pull Request
+
+📄 Licencia
+Este proyecto está bajo la Licencia MIT - ver el archivo LICENSE para más detalles.
+👤 Autor
+Tu Nombre
+
+GitHub: @tuusuario
+LinkedIn: tuperfil
+
+🙏 Agradecimientos
+
+Comunidad de ciberseguridad
+OWASP por sus recursos educativos
+Todos los contribuidores

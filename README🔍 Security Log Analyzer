@@ -1,7 +1,7 @@
 Sistema avanzado de análisis de logs de seguridad que detecta patrones sospechosos, ataques de fuerza bruta, intentos de inyección SQL, escaneos de puertos y otras amenazas comunes.
-Mostrar imagen
-Mostrar imagen
-Mostrar imagen
+https://img.shields.io/badge/Python-3.8+-blue.svg
+https://img.shields.io/badge/License-MIT-green.svg
+https://img.shields.io/badge/Status-Active-success.svg
 🎯 Características
 
 ✅ Detección automática de múltiples tipos de amenazas

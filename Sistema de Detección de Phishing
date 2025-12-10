@@ -1,0 +1,366 @@
+"""
+Phishing Detection System
+Analyzes URLs and emails to detect phishing attempts
+"""
+
+import re
+import requests
+from urllib.parse import urlparse, parse_qs
+import socket
+import ssl
+from datetime import datetime
+import json
+import hashlib
+from typing import Dict, List, Tuple
+import argparse
+
+class PhishingDetector:
+    def __init__(self):
+        self.suspicious_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top', '.work']
+        self.trusted_domains = ['google.com', 'microsoft.com', 'apple.com', 'amazon.com', 
+                               'facebook.com', 'paypal.com', 'github.com']
+        
+        self.phishing_keywords = [
+            'verify', 'account', 'suspended', 'locked', 'confirm', 'urgent',
+            'security', 'alert', 'update', 'click here', 'act now', 'limited time',
+            'winner', 'prize', 'congratulations', 'claim', 'refund', 'tax',
+            'password', 'credentials', 'billing', 'payment', 'expir'
+        ]
+        
+        self.brand_names = [
+            'paypal', 'amazon', 'microsoft', 'apple', 'google', 'facebook',
+            'netflix', 'ebay', 'instagram', 'linkedin', 'twitter', 'dhl',
+            'fedex', 'ups', 'bank', 'wells', 'chase', 'irs', 'boa'
+        ]
+    
+    def analyze_url(self, url: str) -> Dict:
+        """Comprehensive URL analysis for phishing indicators"""
+        result = {
+            'url': url,
+            'timestamp': datetime.now().isoformat(),
+            'risk_score': 0,
+            'risk_level': 'LOW',
+            'indicators': [],
+            'details': {}
+        }
+        
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            path = parsed.path.lower()
+            
+            # Check URL length
+            if len(url) > 75:
+                result['risk_score'] += 10
+                result['indicators'].append('Unusually long URL')
+            
+            # Check for IP address instead of domain
+            if self._is_ip_address(domain):
+                result['risk_score'] += 25
+                result['indicators'].append('IP address instead of domain name')
+            
+            # Check for suspicious TLD
+            for tld in self.suspicious_tlds:
+                if domain.endswith(tld):
+                    result['risk_score'] += 20
+                    result['indicators'].append(f'Suspicious TLD: {tld}')
+                    break
+            
+            # Check for URL shorteners
+            shorteners = ['bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'ow.ly']
+            if any(short in domain for short in shorteners):
+                result['risk_score'] += 15
+                result['indicators'].append('URL shortener detected')
+            
+            # Check for excessive subdomains
+            subdomain_count = domain.count('.')
+            if subdomain_count > 3:
+                result['risk_score'] += 15
+                result['indicators'].append(f'Excessive subdomains ({subdomain_count})')
+            
+            # Check for @ symbol (potential obfuscation)
+            if '@' in url:
+                result['risk_score'] += 20
+                result['indicators'].append('@ symbol in URL (obfuscation technique)')
+            
+            # Check for suspicious characters
+            if any(char in url for char in ['%20', '%00', '0x']):
+                result['risk_score'] += 10
+                result['indicators'].append('Suspicious encoded characters')
+            
+            # Check for brand impersonation
+            for brand in self.brand_names:
+                if brand in domain and not any(trusted in domain for trusted in self.trusted_domains):
+                    if domain != f'{brand}.com' and domain != f'www.{brand}.com':
+                        result['risk_score'] += 30
+                        result['indicators'].append(f'Potential {brand} impersonation')
+                        break
+            
+            # Check for look-alike characters (homograph attack)
+            suspicious_chars = ['İ', 'ı', 'ο', 'а', 'е', 'о', 'р', 'с', 'у', 'х']
+            if any(char in domain for char in suspicious_chars):
+                result['risk_score'] += 25
+                result['indicators'].append('Potential homograph attack (look-alike characters)')
+            
+            # Check HTTPS
+            if parsed.scheme != 'https':
+                result['risk_score'] += 20
+                result['indicators'].append('No HTTPS encryption')
+            else:
+                # Check SSL certificate
+                ssl_info = self._check_ssl_certificate(domain)
+                result['details']['ssl'] = ssl_info
+                if not ssl_info['valid']:
+                    result['risk_score'] += 25
+                    result['indicators'].append('Invalid or self-signed SSL certificate')
+            
+            # Check domain age and registration
+            domain_info = self._check_domain_info(domain)
+            result['details']['domain'] = domain_info
+            
+            # Check for redirection chains
+            redirect_info = self._check_redirects(url)
+            result['details']['redirects'] = redirect_info
+            if redirect_info['redirect_count'] > 2:
+                result['risk_score'] += 15
+                result['indicators'].append(f"Multiple redirects ({redirect_info['redirect_count']})")
+            
+            # Calculate final risk level
+            if result['risk_score'] >= 60:
+                result['risk_level'] = 'CRITICAL'
+            elif result['risk_score'] >= 40:
+                result['risk_level'] = 'HIGH'
+            elif result['risk_score'] >= 20:
+                result['risk_level'] = 'MEDIUM'
+            else:
+                result['risk_level'] = 'LOW'
+            
+        except Exception as e:
+            result['error'] = str(e)
+            result['risk_level'] = 'UNKNOWN'
+        
+        return result
+    
+    def analyze_email(self, email_content: str, sender: str = None) -> Dict:
+        """Analyze email content for phishing indicators"""
+        result = {
+            'sender': sender,
+            'timestamp': datetime.now().isoformat(),
+            'risk_score': 0,
+            'risk_level': 'LOW',
+            'indicators': [],
+            'suspicious_urls': []
+        }
+        
+        email_lower = email_content.lower()
+        
+        # Check for phishing keywords
+        keyword_count = 0
+        found_keywords = []
+        for keyword in self.phishing_keywords:
+            if keyword in email_lower:
+                keyword_count += 1
+                found_keywords.append(keyword)
+        
+        if keyword_count > 3:
+            result['risk_score'] += 20
+            result['indicators'].append(f'Multiple phishing keywords: {", ".join(found_keywords[:5])}')
+        elif keyword_count > 0:
+            result['risk_score'] += 10
+            result['indicators'].append(f'Phishing keywords detected: {", ".join(found_keywords)}')
+        
+        # Check for urgency/pressure
+        urgency_words = ['urgent', 'immediately', 'act now', 'limited time', 'expires', 'hurry']
+        if any(word in email_lower for word in urgency_words):
+            result['risk_score'] += 15
+            result['indicators'].append('Urgency/pressure tactics detected')
+        
+        # Check for generic greetings
+        generic_greetings = ['dear customer', 'dear user', 'dear member', 'hello user']
+        if any(greeting in email_lower for greeting in generic_greetings):
+            result['risk_score'] += 10
+            result['indicators'].append('Generic greeting (not personalized)')
+        
+        # Extract and analyze URLs
+        urls = re.findall(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', email_content)
+        
+        for url in urls:
+            url_analysis = self.analyze_url(url)
+            if url_analysis['risk_score'] > 20:
+                result['suspicious_urls'].append(url_analysis)
+                result['risk_score'] += url_analysis['risk_score'] * 0.5
+        
+        # Check sender domain if provided
+        if sender:
+            sender_domain = sender.split('@')[-1] if '@' in sender else ''
+            
+            # Check if sender domain matches link domains
+            if urls and sender_domain:
+                link_domains = [urlparse(url).netloc for url in urls]
+                if not any(sender_domain in domain for domain in link_domains):
+                    result['risk_score'] += 15
+                    result['indicators'].append('Sender domain does not match link domains')
+            
+            # Check for spoofed sender
+            for brand in self.brand_names:
+                if brand in sender_domain.lower():
+                    if not any(trusted in sender_domain for trusted in self.trusted_domains):
+                        result['risk_score'] += 25
+                        result['indicators'].append(f'Potential spoofed sender ({brand})')
+        
+        # Check for attachments mentioned
+        if any(word in email_lower for word in ['attachment', 'attached', 'download', 'invoice', 'receipt']):
+            result['risk_score'] += 10
+            result['indicators'].append('Mentions attachments (verify before opening)')
+        
+        # Check for grammar/spelling issues
+        grammar_indicators = ['!!' , '???', 'click here!!!']
+        if any(indicator in email_content for indicator in grammar_indicators):
+            result['risk_score'] += 5
+            result['indicators'].append('Excessive punctuation')
+        
+        # Calculate final risk level
+        if result['risk_score'] >= 60:
+            result['risk_level'] = 'CRITICAL'
+        elif result['risk_score'] >= 40:
+            result['risk_level'] = 'HIGH'
+        elif result['risk_score'] >= 20:
+            result['risk_level'] = 'MEDIUM'
+        else:
+            result['risk_level'] = 'LOW'
+        
+        return result
+    
+    def _is_ip_address(self, domain: str) -> bool:
+        """Check if string is an IP address"""
+        try:
+            socket.inet_aton(domain.replace('[', '').replace(']', ''))
+            return True
+        except socket.error:
+            return False
+    
+    def _check_ssl_certificate(self, domain: str) -> Dict:
+        """Check SSL certificate validity"""
+        result = {'valid': False, 'issuer': None, 'expiry': None}
+        try:
+            domain = domain.split(':')[0]  # Remove port if present
+            context = ssl.create_default_context()
+            with socket.create_connection((domain, 443), timeout=5) as sock:
+                with context.wrap_socket(sock, server_hostname=domain) as ssock:
+                    cert = ssock.getpeercert()
+                    result['valid'] = True
+                    result['issuer'] = dict(x[0] for x in cert['issuer'])
+                    result['expiry'] = cert['notAfter']
+        except Exception as e:
+            result['error'] = str(e)
+        return result
+    
+    def _check_domain_info(self, domain: str) -> Dict:
+        """Get domain information"""
+        return {
+            'domain': domain,
+            'note': 'WHOIS lookup would be implemented with python-whois library'
+        }
+    
+    def _check_redirects(self, url: str) -> Dict:
+        """Check for redirect chains"""
+        result = {'redirect_count': 0, 'final_url': url, 'chain': []}
+        try:
+            response = requests.get(url, allow_redirects=True, timeout=5)
+            if response.history:
+                result['redirect_count'] = len(response.history)
+                result['chain'] = [r.url for r in response.history]
+                result['final_url'] = response.url
+        except Exception as e:
+            result['error'] = str(e)
+        return result
+    
+    def generate_report(self, analysis_result: Dict) -> str:
+        """Generate human-readable report"""
+        report = []
+        report.append("=" * 80)
+        report.append("PHISHING DETECTION REPORT")
+        report.append("=" * 80)
+        
+        if 'url' in analysis_result:
+            report.append(f"\nURL: {analysis_result['url']}")
+        elif 'sender' in analysis_result:
+            report.append(f"\nSender: {analysis_result['sender']}")
+        
+        report.append(f"Timestamp: {analysis_result['timestamp']}")
+        report.append(f"Risk Score: {analysis_result['risk_score']}/100")
+        report.append(f"Risk Level: {analysis_result['risk_level']}")
+        
+        if analysis_result['indicators']:
+            report.append("\nSUSPICIOUS INDICATORS:")
+            for indicator in analysis_result['indicators']:
+                report.append(f"  ⚠ {indicator}")
+        
+        if 'suspicious_urls' in analysis_result and analysis_result['suspicious_urls']:
+            report.append("\nSUSPICIOUS URLS IN EMAIL:")
+            for url_result in analysis_result['suspicious_urls']:
+                report.append(f"  - {url_result['url']} (Risk: {url_result['risk_level']})")
+        
+        if 'details' in analysis_result:
+            report.append("\nDETAILED ANALYSIS:")
+            report.append(json.dumps(analysis_result['details'], indent=2))
+        
+        report.append("\n" + "=" * 80)
+        report.append("RECOMMENDATION:")
+        
+        if analysis_result['risk_level'] in ['CRITICAL', 'HIGH']:
+            report.append("  ⛔ DO NOT INTERACT - This appears to be a phishing attempt")
+            report.append("  - Do not click any links")
+            report.append("  - Do not provide any personal information")
+            report.append("  - Report to your security team")
+        elif analysis_result['risk_level'] == 'MEDIUM':
+            report.append("  ⚠ CAUTION - Verify before proceeding")
+            report.append("  - Verify sender through official channels")
+            report.append("  - Do not click links directly")
+        else:
+            report.append("  ✓ Low risk detected, but remain vigilant")
+        
+        report.append("=" * 80)
+        
+        return "\n".join(report)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Phishing Detection System')
+    parser.add_argument('-u', '--url', help='Analyze a URL')
+    parser.add_argument('-e', '--email', help='Analyze email content from file')
+    parser.add_argument('-s', '--sender', help='Email sender address')
+    parser.add_argument('-o', '--output', help='Save report to file')
+    
+    args = parser.parse_args()
+    
+    detector = PhishingDetector()
+    
+    if args.url:
+        print(f"[*] Analyzing URL: {args.url}")
+        result = detector.analyze_url(args.url)
+        report = detector.generate_report(result)
+        print(report)
+        
+        if args.output:
+            with open(args.output, 'w') as f:
+                f.write(report)
+    
+    elif args.email:
+        print(f"[*] Analyzing email from: {args.email}")
+        with open(args.email, 'r') as f:
+            email_content = f.read()
+        result = detector.analyze_email(email_content, args.sender)
+        report = detector.generate_report(result)
+        print(report)
+        
+        if args.output:
+            with open(args.output, 'w') as f:
+                f.write(report)
+    
+    else:
+        parser.print_help()
+
+
+if __name__ == '__main__':
+    main()

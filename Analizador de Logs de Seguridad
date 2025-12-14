@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""
+Security Log Analyzer
+Analyzes system logs for security threats and anomalies
+"""
+
+import re
+import json
+from datetime import datetime
+from collections import defaultdict, Counter
+from typing import List, Dict, Tuple
+import argparse
+
+class SecurityLogAnalyzer:
+    def __init__(self):
+        self.suspicious_patterns = {
+            'brute_force': r'Failed password|authentication failure|invalid user',
+            'sql_injection': r'(\bOR\b.*=.*|UNION.*SELECT|DROP.*TABLE)',
+            'xss_attempt': r'<script|javascript:|onerror=',
+            'path_traversal': r'\.\./|\.\.\\',
+            'privilege_escalation': r'sudo|su -|privilege',
+            'port_scan': r'SYN.*scan|port.*scan',
+            'unauthorized_access': r'403|401|Unauthorized|Access denied'
+        }
+        
+        self.threat_scores = {
+            'brute_force': 8,
+            'sql_injection': 9,
+            'xss_attempt': 7,
+            'path_traversal': 8,
+            'privilege_escalation': 9,
+            'port_scan': 6,
+            'unauthorized_access': 5
+        }
+        
+        self.results = {
+            'total_lines': 0,
+            'threats_detected': [],
+            'ip_analysis': defaultdict(lambda: {'count': 0, 'threats': []}),
+            'threat_timeline': [],
+            'threat_summary': Counter()
+        }
+    
+    def parse_log_line(self, line: str) -> Dict:
+        """Parse a log line and extract relevant information"""
+        # Common log patterns
+        patterns = {
+            'apache': r'(\d+\.\d+\.\d+\.\d+).*\[([^\]]+)\].*"([^"]+)".*(\d{3})',
+            'ssh': r'(\w+\s+\d+\s+\d+:\d+:\d+).*from\s+(\d+\.\d+\.\d+\.\d+)',
+            'generic_ip': r'(\d+\.\d+\.\d+\.\d+)'
+        }
+        
+        log_data = {
+            'raw': line,
+            'timestamp': None,
+            'ip': None,
+            'method': None,
+            'status': None
+        }
+        
+        # Try to extract IP address
+        for pattern_name, pattern in patterns.items():
+            match = re.search(pattern, line, re.IGNORECASE)
+            if match:
+                if pattern_name == 'apache':
+                    log_data['ip'] = match.group(1)
+                    log_data['timestamp'] = match.group(2)
+                    log_data['method'] = match.group(3)
+                    log_data['status'] = match.group(4)
+                elif pattern_name == 'ssh':
+                    log_data['timestamp'] = match.group(1)
+                    log_data['ip'] = match.group(2)
+                else:
+                    log_data['ip'] = match.group(1)
+                break
+        
+        return log_data
+    
+    def detect_threats(self, line: str) -> List[Tuple[str, int]]:
+        """Detect security threats in a log line"""
+        threats = []
+        for threat_type, pattern in self.suspicious_patterns.items():
+            if re.search(pattern, line, re.IGNORECASE):
+                score = self.threat_scores[threat_type]
+                threats.append((threat_type, score))
+        return threats
+    
+    def analyze_brute_force(self) -> List[Dict]:
+        """Identify potential brute force attacks based on failed attempts"""
+        brute_force_attempts = []
+        threshold = 5  # Failed attempts threshold
+        
+        for ip, data in self.results['ip_analysis'].items():
+            failed_count = sum(1 for t in data['threats'] if t[0] == 'brute_force')
+            if failed_count >= threshold:
+                brute_force_attempts.append({
+                    'ip': ip,
+                    'failed_attempts': failed_count,
+                    'total_requests': data['count'],
+                    'severity': 'CRITICAL' if failed_count > 10 else 'HIGH'
+                })
+        
+        return sorted(brute_force_attempts, key=lambda x: x['failed_attempts'], reverse=True)
+    
+    def analyze_file(self, filepath: str) -> Dict:
+        """Main analysis function"""
+        print(f"[*] Analyzing log file: {filepath}")
+        
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            for line_num, line in enumerate(f, 1):
+                self.results['total_lines'] += 1
+                
+                # Parse log line
+                log_data = self.parse_log_line(line)
+                
+                # Detect threats
+                threats = self.detect_threats(line)
+                
+                if threats:
+                    for threat_type, score in threats:
+                        threat_info = {
+                            'line_number': line_num,
+                            'threat_type': threat_type,
+                            'severity_score': score,
+                            'ip': log_data['ip'],
+                            'timestamp': log_data['timestamp'],
+                            'log_snippet': line.strip()[:200]
+                        }
+                        
+                        self.results['threats_detected'].append(threat_info)
+                        self.results['threat_summary'][threat_type] += 1
+                        
+                        if log_data['ip']:
+                            self.results['ip_analysis'][log_data['ip']]['count'] += 1
+                            self.results['ip_analysis'][log_data['ip']]['threats'].append((threat_type, score))
+        
+        # Analyze brute force attacks
+        self.results['brute_force_analysis'] = self.analyze_brute_force()
+        
+        # Get top offending IPs
+        self.results['top_offenders'] = sorted(
+            [{'ip': ip, 'threat_count': len(data['threats']), 'total_requests': data['count']} 
+             for ip, data in self.results['ip_analysis'].items()],
+            key=lambda x: x['threat_count'],
+            reverse=True
+        )[:10]
+        
+        print(f"[+] Analysis complete. Found {len(self.results['threats_detected'])} threats.")
+        return self.results
+    
+    def generate_report(self, output_format='text') -> str:
+        """Generate analysis report"""
+        if output_format == 'json':
+            return json.dumps(self.results, indent=2, default=str)
+        
+        report = []
+        report.append("=" * 80)
+        report.append("SECURITY LOG ANALYSIS REPORT")
+        report.append("=" * 80)
+        report.append(f"\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append(f"Total lines analyzed: {self.results['total_lines']}")
+        report.append(f"Total threats detected: {len(self.results['threats_detected'])}")
+        
+        report.append("\n" + "=" * 80)
+        report.append("THREAT SUMMARY")
+        report.append("=" * 80)
+        for threat_type, count in self.results['threat_summary'].most_common():
+            severity = self.threat_scores[threat_type]
+            report.append(f"  {threat_type.upper():.<40} {count:>5} (Severity: {severity}/10)")
+        
+        if self.results['brute_force_analysis']:
+            report.append("\n" + "=" * 80)
+            report.append("BRUTE FORCE ATTACK ANALYSIS")
+            report.append("=" * 80)
+            for attack in self.results['brute_force_analysis'][:5]:
+                report.append(f"\n  IP: {attack['ip']}")
+                report.append(f"  Failed Attempts: {attack['failed_attempts']}")
+                report.append(f"  Total Requests: {attack['total_requests']}")
+                report.append(f"  Severity: {attack['severity']}")
+        
+        if self.results['top_offenders']:
+            report.append("\n" + "=" * 80)
+            report.append("TOP 10 OFFENDING IPs")
+            report.append("=" * 80)
+            for idx, offender in enumerate(self.results['top_offenders'], 1):
+                report.append(f"  {idx}. {offender['ip']:.<40} Threats: {offender['threat_count']:>3} | Requests: {offender['total_requests']:>5}")
+        
+        report.append("\n" + "=" * 80)
+        report.append("DETAILED THREATS (First 20)")
+        report.append("=" * 80)
+        for threat in self.results['threats_detected'][:20]:
+            report.append(f"\n  Line {threat['line_number']} | {threat['threat_type'].upper()} (Score: {threat['severity_score']}/10)")
+            report.append(f"  IP: {threat['ip'] or 'N/A'} | Time: {threat['timestamp'] or 'N/A'}")
+            report.append(f"  Log: {threat['log_snippet']}")
+        
+        report.append("\n" + "=" * 80)
+        report.append("RECOMMENDATIONS")
+        report.append("=" * 80)
+        
+        if self.results['brute_force_analysis']:
+            report.append("  - Implement rate limiting and IP blocking for repeated failed login attempts")
+            report.append("  - Enable multi-factor authentication (MFA)")
+        
+        if 'sql_injection' in self.results['threat_summary']:
+            report.append("  - Review and sanitize all database inputs")
+            report.append("  - Use prepared statements and parameterized queries")
+        
+        if 'xss_attempt' in self.results['threat_summary']:
+            report.append("  - Implement Content Security Policy (CSP) headers")
+            report.append("  - Sanitize all user inputs and outputs")
+        
+        report.append("  - Monitor these IPs and consider firewall rules")
+        report.append("  - Review access logs regularly and set up automated alerting")
+        
+        report.append("\n" + "=" * 80)
+        
+        return "\n".join(report)
+    
+    def save_report(self, filename: str, output_format='text'):
+        """Save report to file"""
+        report = self.generate_report(output_format)
+        with open(filename, 'w') as f:
+            f.write(report)
+        print(f"[+] Report saved to: {filename}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Security Log Analyzer')
+    parser.add_argument('logfile', help='Path to log file to analyze')
+    parser.add_argument('-o', '--output', help='Output report file', default='security_report.txt')
+    parser.add_argument('-f', '--format', choices=['text', 'json'], default='text', help='Output format')
+    
+    args = parser.parse_args()
+    
+    analyzer = SecurityLogAnalyzer()
+    analyzer.analyze_file(args.logfile)
+    analyzer.save_report(args.output, args.format)
+    
+    # Also print to console
+    print("\n" + analyzer.generate_report('text'))
+
+
+if __name__ == '__main__':
+    main()
